@@ -8,7 +8,7 @@
     body { max-width: 40rem; margin: 2rem auto; padding: 0 1rem; font: 1rem/1.5 system-ui, sans-serif; }
     textarea { box-sizing: border-box; display: block; width: 100%; margin: .5rem 0; padding: .5rem; font: inherit; }
     button { padding: .4rem .8rem; font: inherit; }
-    pre { white-space: pre-wrap; }
+    #result { white-space: pre-wrap; overflow-wrap: anywhere; }
   </style>
 </head>
 <body>
@@ -18,18 +18,48 @@
     <textarea id="message" rows="4"></textarea>
     <button type="submit">Разобрать заявку</button>
   </form>
-  <pre id="result" aria-live="polite"></pre>
+  <p id="result" role="status"></p>
   <script type="module">
     const form = document.querySelector("form");
+    const message = document.querySelector("#message");
+    const submit = form.querySelector("button");
     const result = document.querySelector("#result");
+    const topics = { delivery: "Доставка", pricing: "Стоимость", other: "Другое" };
+
+    message.addEventListener("input", () => { result.textContent = ""; });
+
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const reply = await fetch("/api/triage", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: document.querySelector("#message").value }),
-      });
-      result.textContent = JSON.stringify(await reply.json(), null, 2);
+      const text = message.value.trim();
+      if (!text) {
+        result.textContent = "Введите текст заявки.";
+        message.focus();
+        return;
+      }
+
+      result.textContent = "Разбираем заявку…";
+      submit.disabled = true;
+      message.readOnly = true;
+      try {
+        const reply = await fetch("/api/triage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+        const data = await reply.json();
+        if (reply.ok && data.status === "ready") {
+          result.textContent = `Тема: ${topics[data.topic]}\n\nЧерновик ответа:\n${data.draft}`;
+        } else if (reply.status === 400 && data.status === "invalid_input") {
+          result.textContent = "Введите текст заявки.";
+        } else {
+          result.textContent = "Разберите заявку вручную и подготовьте ответ клиенту.";
+        }
+      } catch {
+        result.textContent = "Не удалось получить ответ сервера. Разберите заявку вручную.";
+      } finally {
+        submit.disabled = false;
+        message.readOnly = false;
+      }
     });
   </script>
 </body>
